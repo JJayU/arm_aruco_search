@@ -18,7 +18,7 @@ class SearchArucoActionServer(Node):
             SearchArUco,
             'SearchAruco',
             self.execute_callback)
-            
+
         self.get_logger().info('SearchAruco Action Server is running...')
 
     def execute_callback(self, goal_handle):
@@ -32,7 +32,7 @@ class SearchArucoActionServer(Node):
             feedback_msg.partial_locations_x.append(i)
             self.get_logger().info('Feedback: {0}'.format(feedback_msg.partial_locations_x))
             goal_handle.publish_feedback(feedback_msg)
-            time.sleep(1)
+            time.sleep(0.5)
 
         goal_handle.succeed()
 
