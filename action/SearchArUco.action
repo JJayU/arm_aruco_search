@@ -1,0 +1,8 @@
+float32 timeout
+---
+bool succeeded
+float32[] locations_x
+float32[] locations_y
+---
+float32[] partial_locations_x
+float32[] partial_locations_y
