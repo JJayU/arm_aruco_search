@@ -4,12 +4,13 @@ import time
 import rclpy
 import random
 import cv2
+import numpy as np
 
 from rclpy.action import ActionServer
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 
-from sensor_msgs.msg import LaserScan, Image
+from sensor_msgs.msg import LaserScan, Image, CameraInfo
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 from search_aruco_action.action import SearchArUco
@@ -41,18 +42,33 @@ class SearchArucoActionServer(Node):
             self.image_callback,
             10)
 
+        self.camera_info_subscription = self.create_subscription(
+            CameraInfo,
+            '/camera/camera_info',
+            self.camera_info_callback,
+            10)
+
         # Velocity publisher
         self.publisher_ = self.create_publisher(Twist, '/cmd_vel', 10)
 
         self.current_distance = 0.0
         self.bridge = CvBridge()
         self.detected_markers = {}
+        self.marker_size = 0.09
+
+        self.camera_matrix = None
+        self.dist_coeffs = None
 
         self.get_logger().info('SearchAruco Action Server is running...')
 
     def laser_callback(self, msg):
         # print('Current distance: "%s"' % msg.ranges[0])
         self.current_distance = min(msg.ranges[0], msg.ranges[-10], msg.ranges[10])
+
+    def camera_info_callback(self, msg):
+        # Pobierz macierz kamery i współczynniki dystorsji z wiadomości CameraInfo
+        self.camera_matrix = np.array(msg.k).reshape(3, 3)
+        self.dist_coeffs = np.array(msg.d)
         
     def image_callback(self, msg):
         # Konwertuj obraz ROS do OpenCV
@@ -70,19 +86,19 @@ class SearchArucoActionServer(Node):
         corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
 
         # Jeśli wykryto markery, przetwórz ich pozycję i ID
-        if ids is not None:
+        if ids is not None and self.camera_matrix is not None and self.dist_coeffs is not None:
+            # Oszacowanie pozycji markerów względem kamery
+            rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
+                corners, self.marker_size, self.camera_matrix, self.dist_coeffs)
+
+            # Przetwarzanie pozycji i orientacji wykrytych markerów
             for i in range(len(ids)):
                 marker_id = ids[i][0]
-                corner = corners[i][0]
+                position = tvecs[i][0]
+                orientation = rvecs[i][0]
+                self.get_logger().info(f'Detected marker {marker_id} at {position} with orientation {orientation}')
 
-                # Wyznaczamy środek markera
-                center_x = int((corner[0][0] + corner[2][0]) / 2)
-                center_y = int((corner[0][1] + corner[2][1]) / 2)
-                
-                print('Detected marker ID: {0}, center: ({1}, {2})'.format(marker_id, center_x, center_y))
-
-                # Zapisujemy wykryty marker
-                self.detected_markers[marker_id] = (center_x, center_y)
+                self.detected_markers[marker_id] = (position, orientation)
 
     def execute_callback(self, goal_handle):
         self.get_logger().info('Executing goal...')
