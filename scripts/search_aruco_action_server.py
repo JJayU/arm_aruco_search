@@ -2,6 +2,7 @@
 import time
 
 import rclpy
+import random
 from rclpy.action import ActionServer
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -27,7 +28,7 @@ class SearchArucoActionServer(Node):
         # Subscribe to laser scan
         self.subscription = self.create_subscription(
             LaserScan,
-            '/laser_scan',
+            '/scan',
             self.listener_callback,
             10)
         self.subscription
@@ -40,8 +41,8 @@ class SearchArucoActionServer(Node):
         self.get_logger().info('SearchAruco Action Server is running...')
 
     def listener_callback(self, msg):
-        self.get_logger().info('Current distance: "%s"' % msg.ranges[180])
-        self.current_distance = msg.ranges[180]
+        print('Current distance: "%s"' % msg.ranges[0])
+        self.current_distance = msg.ranges[0]
 
     def execute_callback(self, goal_handle):
         self.get_logger().info('Executing goal...')
@@ -58,10 +59,22 @@ class SearchArucoActionServer(Node):
         msg = Twist()
 
         while time.time() - start_time < timeout:
-            feedback_msg.partial_locations_x.append(time.time() - start_time)
+            if self.current_distance < 1.0:  # If obstacle is closer than 40 cm
+                # Rotate in a random direction
+                msg.linear.x = 0.0
+                msg.angular.z = random.choice([-1.0, 1.0])
+                self.publisher_.publish(msg)
+                time.sleep(random.random() * 3) 
+            else:
+                # Drive forward
+                msg.linear.x = 0.5
+                msg.angular.z = 0.0
+                self.publisher_.publish(msg)
+
+            feedback_msg.partial_locations_x = [self.current_distance]
             self.get_logger().info('Feedback: {0}'.format(feedback_msg.partial_locations_x))
             goal_handle.publish_feedback(feedback_msg)
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         # Stop at the end
         msg.linear.x = 0.0
